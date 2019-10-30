@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 )
 
 type GrayPixel struct {
@@ -25,6 +26,7 @@ func main() {
 	outputFileArgPtr := flag.String("output", "out.jpg", "path to output file (optional, default: out.jpg")
 	minThresholdArgPtr := flag.Float64("min", float64(0.2), "ratio of lower threshold (optional, default: 0.2")
 	maxThresholdArgPtr := flag.Float64("max", float64(0.6), "ratio of upper threshold (optional, default: 0.6")
+	profileFlag := flag.Bool("profile", false, "do cpu/mem profile on the main logic")
 
 	flag.Parse()
 
@@ -42,11 +44,31 @@ func main() {
 	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
 
 	pixels := openImage(*inputFileArgPtr)
+	if *profileFlag {
+		cpuf, err := os.Create("cpu_profile")
+		if err != nil {
+			log.Fatal(err)
+		}
+		_ = pprof.StartCPUProfile(cpuf)
+	}
 
 	pixels = CannyEdgeDetect(pixels, *blurFlagPtr, *minThresholdArgPtr, *maxThresholdArgPtr)
 
-	writeImage(pixels, *outputFileArgPtr)
+	if *profileFlag {
+		pprof.StopCPUProfile()
 
+		memf, err := os.Create("mem_profile")
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+
+		if err := pprof.WriteHeapProfile(memf); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+		_ = memf.Close()
+	}
+
+	writeImage(pixels, *outputFileArgPtr)
 }
 
 func openImage(path string) [][]GrayPixel {

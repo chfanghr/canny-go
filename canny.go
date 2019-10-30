@@ -129,7 +129,7 @@ func sobel(pixels [][]GrayPixel) ([][]GrayPixel, [][]float64) {
 		for x := 0; x < len(pixels[y]); x++ {
 			var angle float64
 
-			imagePane := getSorroundingPixelMatrix(pixels, y, x, 3)
+			imagePane := getSurroundingPixelMatrix(pixels, y, x, 3)
 
 			sobelRes_X := convolve(imagePane, sobel_X)
 			sobelRes_Y := convolve(imagePane, sobel_Y)
@@ -224,12 +224,11 @@ func getPixelInGradientDirection(pixels [][]GrayPixel, directions [][]float64, x
 	return p, q
 }
 
-func getSorroundingPixelMatrix(pixels [][]GrayPixel, posY, posX int, length int) mat.Dense {
+func getSurroundingPixelMatrix(pixels [][]GrayPixel, posY, posX int, length int) mat.Dense {
 	if length%2 == 0 {
 		panic(errors.New("length must be odd number"))
 	}
 
-	var values []float64
 	var currentPixel GrayPixel
 	padding := (length / 2)
 
@@ -241,6 +240,8 @@ func getSorroundingPixelMatrix(pixels [][]GrayPixel, posY, posX int, length int)
 	width := len(pixels[0])
 
 	var curY, curX int
+	var values = make([]float64, 0, (maxY-minY+1)*(maxX-minX+1))
+
 	for y := minY; y <= maxY; y++ {
 		if y < 0 {
 			curY = posY + abs(y)
@@ -281,6 +282,7 @@ func getPixelVector(pixels [][]GrayPixel, posY, posX int, length int, dir direct
 	case HORIZONTAL:
 		minX := posX - padding
 		maxX := posX + padding
+		values = make([]float64, 0, maxX-minX+1)
 		for i := minX; i <= maxX; i++ {
 			rowLength := len(pixels[posY])
 			if i < 0 {
@@ -297,6 +299,7 @@ func getPixelVector(pixels [][]GrayPixel, posY, posX int, length int, dir direct
 	case VERTICAL:
 		minY := posY - padding
 		maxY := posY + padding
+		values = make([]float64, 0, maxY-minY+1)
 		for i := minY; i <= maxY; i++ {
 			columnLength := len(pixels)
 			if i < 0 {
