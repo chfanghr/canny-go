@@ -1,4 +1,4 @@
-module canny-go
+module github.com/chfanghr/canny-go
 
 go 1.13
 
