@@ -1,8 +1,6 @@
 package main
 
 import (
-	"flag"
-	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -11,7 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime/pprof"
+	"syscall/js"
 )
 
 type GrayPixel struct {
@@ -19,56 +17,116 @@ type GrayPixel struct {
 	a uint8
 }
 
+type Color struct {
+	r, g, b, a uint32
+}
+
+func (c Color) RGBA() (r, g, b, a uint32) {
+	return c.r, c.g, c.b, c.a
+}
+
+type Image struct {
+	height, width int
+	pixels        [][]Color
+}
+
+func (i Image) toPixelArray() (pixelArr [][]GrayPixel) {
+	for y := 0; y < i.height; y++ {
+		var row []GrayPixel
+		for x := 0; x < i.width; x++ {
+			pixel := i.pixels[x][y]
+			grayPixel := rgbaToGrayPixel(pixel)
+			row = append(row, grayPixel)
+		}
+		pixelArr = append(pixelArr, row)
+	}
+	return
+}
+
+func pixelArrayFromJs(h, w, p js.Value) [][]GrayPixel {
+	img := Image{
+		height: h.Int(),
+		width:  w.Int(),
+		pixels: nil,
+	}
+
+	for i := 0; i < img.width; i++ {
+		var row []Color
+		for j := 0; j < img.height; j++ {
+			obj := p.Index(i).Index(j)
+			var c Color
+			c.r = uint32(obj.Get("r").Int())
+			c.g = uint32(obj.Get("g").Int())
+			c.b = uint32(obj.Get("b").Int())
+			c.a = uint32(obj.Get("a").Int())
+			row = append(row, c)
+		}
+		img.pixels = append(img.pixels, row)
+	}
+
+	return img.toPixelArray()
+}
+
+func doJob(_ js.Value, args []js.Value) interface{} {
+	pixelArray := pixelArrayFromJs(args[0], args[1], args[2])
+	res := CannyEdgeDetect(pixelArray, args[3].Bool(), args[4].Float(), args[5].Float())
+	return js.ValueOf(res)
+}
+
 func main() {
-
-	blurFlagPtr := flag.Bool("blur", true, "perform gaussian blur before edge detection (optional, default: true)")
-	inputFileArgPtr := flag.String("input", "", "path to input file (required)")
-	outputFileArgPtr := flag.String("output", "out.jpg", "path to output file (optional, default: out.jpg")
-	minThresholdArgPtr := flag.Float64("min", float64(0.2), "ratio of lower threshold (optional, default: 0.2")
-	maxThresholdArgPtr := flag.Float64("max", float64(0.6), "ratio of upper threshold (optional, default: 0.6")
-	profileFlag := flag.Bool("profile", false, "do cpu/mem profile on the main logic")
-
-	flag.Parse()
-
-	if *inputFileArgPtr == "" {
-		fmt.Println("No path to input file specified, nothing to do.")
-		return
-	}
-
-	if !isValidRatioValue(*minThresholdArgPtr) || !isValidRatioValue(*maxThresholdArgPtr) {
-		fmt.Println("Invalid value for threshold ratio given, exiting.")
-		return
-	}
-
-	image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
-	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
-
-	pixels := openImage(*inputFileArgPtr)
-	if *profileFlag {
-		cpuf, err := os.Create("cpu_profile")
-		if err != nil {
-			log.Fatal(err)
-		}
-		_ = pprof.StartCPUProfile(cpuf)
-	}
-
-	pixels = CannyEdgeDetect(pixels, *blurFlagPtr, *minThresholdArgPtr, *maxThresholdArgPtr)
-
-	if *profileFlag {
-		pprof.StopCPUProfile()
-
-		memf, err := os.Create("mem_profile")
-		if err != nil {
-			log.Fatal("could not create memory profile: ", err)
-		}
-
-		if err := pprof.WriteHeapProfile(memf); err != nil {
-			log.Fatal("could not write memory profile: ", err)
-		}
-		_ = memf.Close()
-	}
-
-	writeImage(pixels, *outputFileArgPtr)
+	c := make(chan struct{}, 0)
+	js.Global().Set("CannyEdgeDetect", js.FuncOf(doJob))
+	println("WASM Go Initialized")
+	<-c
+	//
+	//blurFlagPtr := flag.Bool("blur", true, "perform gaussian blur before edge detection (optional, default: true)")
+	//inputFileArgPtr := flag.String("input", "", "path to input file (required)")
+	//outputFileArgPtr := flag.String("output", "out.jpg", "path to output file (optional, default: out.jpg")
+	//minThresholdArgPtr := flag.Float64("min", float64(0.2), "ratio of lower threshold (optional, default: 0.2")
+	//maxThresholdArgPtr := flag.Float64("max", float64(0.6), "ratio of upper threshold (optional, default: 0.6")
+	//profileFlag := flag.Bool("profile", false, "do cpu/mem profile on the main logic")
+	//
+	//flag.Parse()
+	//
+	//if *inputFileArgPtr == "" {
+	//	fmt.Println("No path to input file specified, nothing to do.")
+	//	return
+	//}
+	//
+	//if !isValidRatioValue(*minThresholdArgPtr) || !isValidRatioValue(*maxThresholdArgPtr) {
+	//	fmt.Println("Invalid value for threshold ratio given, exiting.")
+	//	return
+	//}
+	//
+	//image.RegisterFormat("jpeg", "jpeg", jpeg.Decode, jpeg.DecodeConfig)
+	//image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
+	//
+	//pixels := openImage(*inputFileArgPtr)
+	//if *profileFlag {
+	//	cpuf, err := os.Create("cpu_profile")
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	_ = pprof.StartCPUProfile(cpuf)
+	//}
+	//
+	//pixels = CannyEdgeDetect(pixels, *blurFlagPtr, *minThresholdArgPtr, *maxThresholdArgPtr)
+	//
+	//if *profileFlag {
+	//	pprof.StopCPUProfile()
+	//
+	//	memf, err := os.Create("mem_profile")
+	//	if err != nil {
+	//		log.Fatal("could not create memory profile: ", err)
+	//	}
+	//
+	//	if err := pprof.WriteHeapProfile(memf); err != nil {
+	//		log.Fatal("could not write memory profile: ", err)
+	//	}
+	//	_ = memf.Close()
+	//}
+	//
+	//writeImage(pixels, *outputFileArgPtr)
 }
 
 func openImage(path string) [][]GrayPixel {
